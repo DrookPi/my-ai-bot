@@ -1,38 +1,46 @@
 import discord
 from discord.ext import commands
 import os
-from flask import Flask
-from threading import Thread
+from groq import AsyncGroq
 
-app = Flask('')
-@app.route('/')
-def home(): return "Bot is Alive"
-def run_web_server(): app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+# 1. Define strict, required intents only
+intents = discord.Intents.default()
+intents.message_content = True 
+intents.messages = True
+intents.guilds = True
 
-intents = discord.Intents.all() # Enable ALL intents to stop the guessing game
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# 2. Initialize AI client
+ai_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 
 @bot.event
 async def on_ready():
-    print(f"--- BOT IS ONLINE AS {bot.user} ---")
+    print(f"--- BOT CONNECTED AS {bot.user} ---")
+    print(f"--- SERVER COUNT: {len(bot.guilds)} ---")
+    # Verify bot can see messages
+    for guild in bot.guilds:
+        print(f"--- BOT IS INSIDE: {guild.name} ---")
 
 @bot.event
 async def on_message(message):
-    # This will print EVERY message it sees. If you don't see this in logs, 
-    # the bot is not in your server or is not receiving events.
-    print(f"DEBUG: I SAW A MESSAGE: {message.content} from {message.author}")
-
-    if message.author.bot:
+    if message.author == bot.user:
         return
 
-    # Super aggressive keyword check (bypasses AI for now to test connection)
-    if "f-word" in message.content.lower():
-        print("DEBUG: KEYWORD DETECTED! Attempting to delete...")
+    # Log every single message heard to verify connection
+    print(f"DEBUG: I HEARD: '{message.content}' from {message.author}")
+
+    # Aggressive keyword-based safety net (always works)
+    bad_words = ["fuck", "idiot", "hate"] # Add your list here
+    if any(word in message.content.lower() for word in bad_words):
         try:
             await message.delete()
-            print("DEBUG: MESSAGE DELETED.")
-        except Exception as e:
-            print(f"DEBUG: DELETE FAILED: {e}")
+            print("DEBUG: DELETE SUCCESSFUL")
+        except discord.Forbidden:
+            print("DEBUG: PERMISSION DENIED - Bot needs 'Manage Messages' permission!")
+        return
 
-Thread(target=run_web_server).start()
+    # Advanced AI Analysis (if keyword check passes)
+    await bot.process_commands(message)
+
 bot.run(os.environ.get("DISCORD_BOT_TOKEN"))
