@@ -17,7 +17,9 @@ def run_web_server():
 
 # Initialize AI and Bot
 ai_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+intents = discord.Intents.all()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 SECRET_LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", 0))
 
