@@ -5,7 +5,7 @@ from groq import Groq
 from flask import Flask
 from threading import Thread
 
-# 1. Trick Render into keeping the bot alive 24/7
+# Initialize Flask for Render 24/7 pinging
 app = Flask('')
 
 @app.route('/')
@@ -15,7 +15,7 @@ def home():
 def run_web_server():
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
-# 2. Initialize AI Client and Discord Bot using environment variables
+# Initialize AI and Bot
 ai_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
@@ -27,10 +27,10 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    if message.author.bot:
+    # CRUCIAL FIX 1: Ignore bot and webhook messages entirely so it never breaks/crashes
+    if message.author.bot or message.webhook_id:
         return
 
-    # Advanced prompt to check for arguments and toxic slang
     prompt = f"""
     Analyze the following Discord message. Detect if it contains:
     1. Harsh slangs or slurs.
@@ -49,22 +49,31 @@ async def on_message(message):
         )
         ai_response = chat_completion.choices[0].message.content.strip()
     except Exception:
-        ai_response = "CLEAN" # Fail-safe if API hiccups
+        ai_response = "CLEAN"
 
     if "FLAGGED" in ai_response:
         log_channel = bot.get_channel(SECRET_LOG_CHANNEL_ID)
         if log_channel:
-            embed = discord.Embed(title="🚨 AI Auto-Mod Deletion", color=discord.Color.red())
-            embed.add_field(name="User", value=f"{message.author.mention}", inline=False)
-            embed.add_field(name="Channel", value=message.channel.mention, inline=True)
-            embed.add_field(name="Flagged Message", value=message.content, inline=False)
-            await log_channel.send(embed=embed)
+            try:
+                embed = discord.Embed(title="🚨 AI Auto-Mod Deletion", color=discord.Color.red())
+                embed.add_field(name="User", value=f"{message.author.mention}", inline=False)
+                embed.add_field(name="Channel", value=message.channel.mention, inline=True)
+                embed.add_field(name="Flagged Message", value=message.content, inline=False)
+                await log_channel.send(embed=embed)
+            except Exception as e:
+                print(f"Failed to send log message: {e}")
         
-        await message.delete()
+        # CRUCIAL FIX 2: Wrap deletion in a safety block so a failed deletion never crashes the whole bot
+        try:
+            await message.delete()
+        except discord.Forbidden:
+            print(f"Error: Couldn't delete message in {message.channel.name}. Check role order/permissions.")
+        except Exception as e:
+            print(f"Unexpected deletion error: {e}")
         return
 
     await bot.process_commands(message)
 
-# Start the web server thread, then launch the bot
+# Run the stay-alive server and start bot
 Thread(target=run_web_server).start()
 bot.run(os.environ.get("DISCORD_BOT_TOKEN"))
